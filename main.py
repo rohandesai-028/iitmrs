@@ -5,8 +5,7 @@ print("\n\nHello, I'm a scheduler!!! :)\n\n")
 # -----------------------------------------------------------------------
 # Variable Declarations
 # -----------------------------------------------------------------------
-
-TOTAL_SLOTS = 5     #No of slots to schedule
+TOTAL_SLOTS = 10     #No of slots to schedule
 TOTAL_PRBS  = 52    #Total available Physical Resource Blocks in one slot
 TOTAL_EMBB_USERS = 10   #Total No of EMBB users to schedule
 EMBB_ID = np.arange(0,TOTAL_EMBB_USERS,dtype=np.int32) #ID of EMBB users
@@ -48,7 +47,7 @@ OFDM_SYM_DURATION_MS = 1/14 #OFDM Symbol Duration in milliseconds
 cqi_embb_user = np.around(np.random.normal(loc=18,scale=5,size=(TOTAL_EMBB_USERS)),decimals=0)
 cqi_embb_user = np.clip(cqi_embb_user, 0, 28)
 Rb_Map = np.zeros((TOTAL_SLOTS,TOTAL_PRBS,3),dtype=np.int32)
-EMBB_buff = np.random.randint(low=70*5*100,high=70*50*100,size=TOTAL_EMBB_USERS) 
+EMBB_buff = np.random.randint(low=70*60*100,high=70*100*100,size=TOTAL_EMBB_USERS) 
 Bit_Rate = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
 Total_Data = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
 historical_br = np.ones(TOTAL_EMBB_USERS,dtype=np.float32)
@@ -95,6 +94,8 @@ def update_historical_br(served, br, TOTAL_EMBB_USERS, Total, slot_num):
     served = np.zeros(TOTAL_EMBB_USERS,dtype=int)
     return served, br    
 
+def puncture_check():
+    pass
 
 print("\nScheduler Start")
 print("Number of EMBB Users", TOTAL_EMBB_USERS)
@@ -104,7 +105,6 @@ print("EMBB Buffer data", EMBB_buff)
     
 for embbs in range(0,TOTAL_EMBB_USERS):
     Bit_Rate[embbs] = (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[int(cqi_embb_user[embbs])]/OFDM_SYM_DURATION_MS
-
 
 print("Bit Rate of the EMBB users",Bit_Rate)
 print("Historical Bit Rate",historical_br)
