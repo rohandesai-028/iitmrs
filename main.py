@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-
+from gym import Env
+from gym.spaces import Discrete
 print("\n\nHello, I'm a scheduler!!! :)\n\n")
 # -----------------------------------------------------------------------
 # Variable Declarations
@@ -54,6 +55,8 @@ Bit_Rate = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
 Total_Data = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
 historical_br = np.ones(TOTAL_EMBB_USERS,dtype=np.float32)
 served_curr_slot = np.zeros(TOTAL_EMBB_USERS,dtype=int)
+urllc_total_data = 0
+urllc_data_rate = 0
 # -----------------------------------------------------------------------
 # Function Definitions
 # -----------------------------------------------------------------------
@@ -83,22 +86,36 @@ def PFScheduler(slot_num, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, historic
     ------------------------------------------------------------------------------
     '''
     embb_user_to_sch = np.argmax(np.divide(Bit_Rate,historical_br))
-    for slot_min in range(0,TOTAL_MINI_SLOTS):
-        Rb_Map[(slot_num*7)+slot_min][prb][0] = embb_user_to_sch
+    
+    Rb_Map[slot_num][prb][0] = embb_user_to_sch
     Total_Data[embb_user_to_sch] += Bit_Rate[embb_user_to_sch]
     historical_br[embb_user_to_sch] = Total_Data[embb_user_to_sch]/(slot_num+1)  
     EMBB_buff[embb_user_to_sch] -= Bit_Rate[embb_user_to_sch]
     served_curr_slot[embb_user_to_sch] = 1
 #--------------------------------------------------------------------------------
-def update_historical_br(served, br, TOTAL_EMBB_USERS, Total, slot_num):
+def update_historical_br(served, br, TOTAL_EMBB_USERS, Total, slot_num, urllc_dr, urllc_total):
     for embb_user in range(0,TOTAL_EMBB_USERS):
         if served[embb_user] == 0:
             br[embb_user] = Total[embb_user]/(slot_num+1)
     served = np.zeros(TOTAL_EMBB_USERS,dtype=int)
-    return served, br    
+    urllc_dr = urllc_total/(slot_num+1)
+    return served, br
 #--------------------------------------------------------------------------------
-def puncture_check(slot_num,):
+def puncture_embb(no_of_punc, Rb_Map, slot_no, embb_total_data, embb_br, embb_tx, urllc_total, urllc_dr):
+    '''
+    Objective: Puncture the EMBB, i.e. reduce data rate of the users that have 
+    been punctured.
+    Allocate DR to URLLC DATA RATE VARIABLE
+    Recalculate Data rate from respective EMBB users using the RBMap.
 
+    Input: RBMAP, URLLC_DR, EMBB_DR, EMBB_TX_Buff, Puncture_ct
+
+    '''
+    global OH, MIMO_LAYERS, NO_OF_SYM_PER_RB, CQI_TABLE, OFDM_SYM_DURATION_MS
+    for prbs in range(0,no_of_punc):
+        embb_total_data[Rb_Map[slot_no][prbs][0]] -= int(embb_br[Rb_Map[slot_no][prbs][0]]/7)
+        embb_tx[Rb_Map[slot_no][prbs][0]] += int(embb_br[Rb_Map[slot_no][prbs][0]]/7)
+    urllc_total += (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[22]*no_of_punc/OFDM_SYM_DURATION_MS
     pass
 #--------------------------------------------------------------------------------
 def update_br():
@@ -116,8 +133,7 @@ def urllc_arrival():
         punc = embb_punct_ct
     else:
         punc = TOTAL_PRBS
-    total_urllc_dr = punc * (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[22]/OFDM_SYM_DURATION_MS/7
-
+    return punc
     pass
 #--------------------------------------------------------------------------------
 print("\nScheduler Start")
@@ -133,14 +149,46 @@ print("Bit Rate of the EMBB users",Bit_Rate)
 print("Historical Bit Rate",historical_br)
 for slots in range(0,TOTAL_SLOTS):
     print("\n\nSlot Number",slots)
-    for minislots in range(0,TOTAL_MINI_SLOTS):
-        for prb in range(0,TOTAL_PRBS):
-            if minislots == 0:
-                PFScheduler(slots, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, historical_br)
+    for prb in range(0,TOTAL_PRBS):
+        PFScheduler(slots, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, 
+                    historical_br)
+    punc_ct = urllc_arrival()
+    puncture_embb(punc_ct, Rb_Map, slots,Total_Data,
+                  Bit_Rate, EMBB_buff,urllc_total_data, urllc_data_rate)
+    print(Rb_Map[slots])
+    print("EMBB Users served:",served_curr_slot)
+    served_curr_slot, historical_br = update_historical_br(served_curr_slot, 
+                                                            historical_br, 
+                                                            TOTAL_EMBB_USERS,
+                                                            Total_Data, 
+                                                            slots, 
+                                                            urllc_total_data,
+                                                            urllc_data_rate)
+    print("Total Data:",Total_Data)
+    print("Req Buffer:",EMBB_buff)
+    print("Historical BR:",historical_br)
+    print("URLLC Data Rate: ",urllc_data_rate)
 
-            #print(Rb_Map)
-        print("EMBB Users served:",served_curr_slot)
-        served_curr_slot, historical_br = update_historical_br(served_curr_slot, historical_br, TOTAL_EMBB_USERS, Total_Data, slots)
-        print("Total Data:",Total_Data)
-        print("Req Buffer:",EMBB_buff)
-        print("Historical BR:",historical_br)
+
+
+
+
+#--------------------------------------------------------------------------------
+# Template environment setup
+#--------------------------------------------------------------------------------
+NUMBER_OF_ACTIONS = TOTAL_PRBS
+class RB_ENV(Env):
+    def __init__(self):
+        self.action_space = Discrete(NUMBER_OF_ACTIONS)
+        #No of RBs to be handed over to urllc in one slot
+        
+        pass
+    def step(self):
+        #defines what we do at every state
+        pass
+    def render(self):
+        #dont do anything
+        pass
+    def reset(self):
+        #reset environment after episode
+        pass
