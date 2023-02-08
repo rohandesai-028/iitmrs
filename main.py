@@ -2,15 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from gym import Env
 from gym.spaces import Discrete
+from gym.spaces import Box
 print("\n\nHello, I'm a scheduler!!! :)\n\n")
 # -----------------------------------------------------------------------
 # Variable Declarations
 # -----------------------------------------------------------------------
-TOTAL_SLOTS = 10        #No of slots to schedule
+TOTAL_SLOTS = 100         #No of slots to schedule
 TOTAL_MINI_SLOTS = 7     #No of minislots in one slot
-TOTAL_PRBS  = 52        #Total available Physical Resource Blocks in one slot
+TOTAL_PRBS  = 26        #Total available Physical Resource Blocks in one slot
 TOTAL_EMBB_USERS = 10   #Total No of EMBB users to schedule
-URLLC_RATE = 10
+URLLC_RATE = 5
 EMBB_ID = np.arange(0,TOTAL_EMBB_USERS,dtype=np.int32) #ID of EMBB users
 CQI_TABLE = np.array([2*(120/1024), 
                           2*(157/1024), 
@@ -47,6 +48,8 @@ NO_OF_SYM_PER_RB = 12
 OFDM_SYM_DURATION = 1/14000     #OFDM Symbol Duration in seconds
 OFDM_SYM_DURATION_MS = 1/14     #OFDM Symbol Duration in milliseconds
 
+final_dr_embb = []
+final_dr_urllc = []
 cqi_embb_user = np.around(np.random.normal(loc=18,scale=5,size=(TOTAL_EMBB_USERS)),decimals=0)
 cqi_embb_user = np.clip(cqi_embb_user, 0, 28)
 Rb_Map = np.zeros((TOTAL_SLOTS*TOTAL_MINI_SLOTS,TOTAL_PRBS,3),dtype=np.int32)
@@ -57,6 +60,7 @@ historical_br = np.ones(TOTAL_EMBB_USERS,dtype=np.float32)
 served_curr_slot = np.zeros(TOTAL_EMBB_USERS,dtype=int)
 urllc_total_data = 0
 urllc_data_rate = 0
+urllc_arrival_rate = np.arange(start=5,stop=80,step=3)
 # -----------------------------------------------------------------------
 # Function Definitions
 # -----------------------------------------------------------------------
@@ -93,15 +97,18 @@ def PFScheduler(slot_num, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, historic
     EMBB_buff[embb_user_to_sch] -= Bit_Rate[embb_user_to_sch]
     served_curr_slot[embb_user_to_sch] = 1
 #--------------------------------------------------------------------------------
-def update_historical_br(served, br, TOTAL_EMBB_USERS, Total, slot_num, urllc_dr, urllc_total):
+def update_historical_br(served, br, TOTAL_EMBB_USERS, Total, slot_num,urllc_total):
     for embb_user in range(0,TOTAL_EMBB_USERS):
         if served[embb_user] == 0:
             br[embb_user] = Total[embb_user]/(slot_num+1)
     served = np.zeros(TOTAL_EMBB_USERS,dtype=int)
     urllc_dr = urllc_total/(slot_num+1)
-    return served, br
+    total_embb_dr = sum(br)
+    print("EMBB TOTAL DR =",total_embb_dr)
+    print("URLLC DATA RATE =",urllc_data_rate)
+    return served, br, urllc_dr, total_embb_dr
 #--------------------------------------------------------------------------------
-def puncture_embb(no_of_punc, Rb_Map, slot_no, embb_total_data, embb_br, embb_tx, urllc_total, urllc_dr):
+def puncture_embb(no_of_punc, Rb_Map, slot_no, embb_total_data, embb_br, embb_tx, urllc_total):
     '''
     Objective: Puncture the EMBB, i.e. reduce data rate of the users that have 
     been punctured.
@@ -111,11 +118,16 @@ def puncture_embb(no_of_punc, Rb_Map, slot_no, embb_total_data, embb_br, embb_tx
     Input: RBMAP, URLLC_DR, EMBB_DR, EMBB_TX_Buff, Puncture_ct
 
     '''
+    print("\n---------\n Puncture Mode\n----------\n ")
+    print("number of prbs punctured =",no_of_punc)
+    print('\n')
     global OH, MIMO_LAYERS, NO_OF_SYM_PER_RB, CQI_TABLE, OFDM_SYM_DURATION_MS
     for prbs in range(0,no_of_punc):
         embb_total_data[Rb_Map[slot_no][prbs][0]] -= int(embb_br[Rb_Map[slot_no][prbs][0]]/7)
         embb_tx[Rb_Map[slot_no][prbs][0]] += int(embb_br[Rb_Map[slot_no][prbs][0]]/7)
-    urllc_total += (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[22]*no_of_punc/OFDM_SYM_DURATION_MS
+    urllc_total += (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[22]*no_of_punc/OFDM_SYM_DURATION_MS/7
+    print("URLLC DATA =", urllc_total)
+    return urllc_total
     pass
 #--------------------------------------------------------------------------------
 def update_br():
@@ -127,8 +139,8 @@ def update_br():
 
     pass
 #--------------------------------------------------------------------------------
-def urllc_arrival():
-    embb_punct_ct = np.random.poisson(lam=URLLC_RATE)
+def urllc_arrival(urllc_arrival_rate):
+    embb_punct_ct = np.random.poisson(lam=urllc_arrival_rate)
     if embb_punct_ct < TOTAL_PRBS:
         punc = embb_punct_ct
     else:
@@ -141,38 +153,52 @@ print("Number of EMBB Users", TOTAL_EMBB_USERS)
 print("CQI of EMBB Users", cqi_embb_user)
 print("EMBB Buffer data", EMBB_buff)
 #print("RB map", Rb_Map)
+cqi_embb_user = np.around(np.random.normal(loc=18,scale=5,size=(TOTAL_EMBB_USERS)),decimals=0)
+cqi_embb_user = np.clip(cqi_embb_user, 0, 28)
+for i in range(0,len(urllc_arrival_rate)):
+    
+    Rb_Map = np.zeros((TOTAL_SLOTS*TOTAL_MINI_SLOTS,TOTAL_PRBS,3),dtype=np.int32)
+    EMBB_buff = np.random.randint(low=70*60*100,high=70*100*100,size=TOTAL_EMBB_USERS) 
+    Bit_Rate = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
+    Total_Data = np.zeros(TOTAL_EMBB_USERS,dtype=np.float32)
+    historical_br = np.ones(TOTAL_EMBB_USERS,dtype=np.float32)
+    served_curr_slot = np.zeros(TOTAL_EMBB_USERS,dtype=int)
+    urllc_total_data = 0
+    urllc_data_rate = 0
+    for embbs in range(0,TOTAL_EMBB_USERS):
+        Bit_Rate[embbs] = (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[int(cqi_embb_user[embbs])]/OFDM_SYM_DURATION_MS
 
-for embbs in range(0,TOTAL_EMBB_USERS):
-    Bit_Rate[embbs] = (1-OH)*MIMO_LAYERS*NO_OF_SYM_PER_RB*CQI_TABLE[int(cqi_embb_user[embbs])]/OFDM_SYM_DURATION_MS
+    print("Bit Rate of the EMBB users",Bit_Rate)
+    print("Historical Bit Rate",historical_br)
+    for slots in range(0,TOTAL_SLOTS):
+        print("\n\nSlot Number",slots)
+        for prb in range(0,TOTAL_PRBS):
+            PFScheduler(slots, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, 
+                        historical_br)
+        punc_ct = urllc_arrival(urllc_arrival_rate=urllc_arrival_rate[i])
+        urllc_total_data = puncture_embb(punc_ct, Rb_Map, slots,Total_Data,
+                    Bit_Rate, EMBB_buff,urllc_total_data)
+        print(Rb_Map[slots])
+        print("EMBB Users served:",served_curr_slot)
+        served_curr_slot, historical_br, urllc_data_rate, total_br = update_historical_br(served_curr_slot, 
+                                                                historical_br, 
+                                                                TOTAL_EMBB_USERS,
+                                                                Total_Data, 
+                                                                slots, 
+                                                                urllc_total_data)
+        print("Total Data:",Total_Data)
+        print("Req Buffer:",EMBB_buff)
+        print("Historical BR:",historical_br)
+        print("URLLC Data Rate: ",urllc_data_rate)
 
-print("Bit Rate of the EMBB users",Bit_Rate)
-print("Historical Bit Rate",historical_br)
-for slots in range(0,TOTAL_SLOTS):
-    print("\n\nSlot Number",slots)
-    for prb in range(0,TOTAL_PRBS):
-        PFScheduler(slots, prb, Rb_Map, EMBB_buff, Bit_Rate, Total_Data, 
-                    historical_br)
-    punc_ct = urllc_arrival()
-    puncture_embb(punc_ct, Rb_Map, slots,Total_Data,
-                  Bit_Rate, EMBB_buff,urllc_total_data, urllc_data_rate)
-    print(Rb_Map[slots])
-    print("EMBB Users served:",served_curr_slot)
-    served_curr_slot, historical_br = update_historical_br(served_curr_slot, 
-                                                            historical_br, 
-                                                            TOTAL_EMBB_USERS,
-                                                            Total_Data, 
-                                                            slots, 
-                                                            urllc_total_data,
-                                                            urllc_data_rate)
-    print("Total Data:",Total_Data)
-    print("Req Buffer:",EMBB_buff)
-    print("Historical BR:",historical_br)
-    print("URLLC Data Rate: ",urllc_data_rate)
+    final_dr_urllc.append(urllc_data_rate)
+    final_dr_embb.append(total_br)
 
-
-
-
-
+print("EMBB DR for different arrival rates",final_dr_embb)
+print("URLLC DR for different arrival rates",final_dr_urllc)
+print(urllc_arrival_rate)
+plt.plot(urllc_arrival_rate,final_dr_embb)
+plt.show()
 #--------------------------------------------------------------------------------
 # Template environment setup
 #--------------------------------------------------------------------------------
@@ -181,6 +207,15 @@ class RB_ENV(Env):
     def __init__(self):
         self.action_space = Discrete(NUMBER_OF_ACTIONS)
         #No of RBs to be handed over to urllc in one slot
+        #List of all the parameters in observation space 
+        #with their lows and highs
+        #URLLC Arrival Rate: [0,10000]
+        #EMBB USER Buffer data Total: [0, 1000000]
+        #EMBB Total Data Rate: [0,500000]
+        #URLLC Total Data Rate:[0,500000]
+        #EMBB CQI:[0,28]
+        
+        self.observation_space = Box(low=np.array(0,0,0,0), high=np.array(10000,1000000,500000,500000), dtype=np.float32)
         
         pass
     def step(self):
