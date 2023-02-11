@@ -47,6 +47,10 @@ MIMO_LAYERS = 4                 #No of MIMO Layers
 NO_OF_SYM_PER_RB = 12
 OFDM_SYM_DURATION = 1/14000     #OFDM Symbol Duration in seconds
 OFDM_SYM_DURATION_MS = 1/14     #OFDM Symbol Duration in milliseconds
+EPISODE_DURATION = 10           #number of actions in one episode(10 slots)
+
+
+
 
 final_dr_embb = []
 final_dr_urllc = []
@@ -215,8 +219,9 @@ class RB_ENV(Env):
         #URLLC Total Data Rate:[0,500000]
         #EMBB CQI:[0,28]
         
-        self.observation_space = Box(low=np.array(0,0,0,0), high=np.array(10000,1000000,500000,500000), dtype=np.float32)
-        
+        self.observation_space = Box(low=np.array(0,0,0,0), high=np.array(100000,10000000,5000000,5000000), dtype=np.float32)
+
+    
         pass
     def step(self):
         #defines what we do at every state
@@ -227,3 +232,4 @@ class RB_ENV(Env):
     def reset(self):
         #reset environment after episode
         pass
+
